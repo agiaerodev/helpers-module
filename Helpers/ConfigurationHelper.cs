@@ -2,6 +2,8 @@
 using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Identity.Client;
+using System.ComponentModel.Design;
+using System.IO;
 using System.Reflection;
 using System.Security.Policy;
 
@@ -9,10 +11,9 @@ namespace Ihelpers.Helpers
 {
     public class ConfigurationHelper
     {
-
         public const string AZURE_FUNCTION_PATH = "/home/site/wwwroot";
-
         public static bool isAzureFunction = false;
+        public const string ENVIRONMENT = "PLATFORM_ENV";
         /// <summary>
         /// Authentication options
         /// </summary>
@@ -36,7 +37,7 @@ namespace Ihelpers.Helpers
 
             var builder = new ConfigurationBuilder()
              .SetBasePath(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location))
-            .AddJsonFile(path);
+             .AddJsonFile(path);
 
             Configuration = builder.Build();
 
@@ -49,57 +50,92 @@ namespace Ihelpers.Helpers
             config.MicrosoftGraphBaseEndpoint = Configuration.GetValue<string>("WebAPI:MicrosoftGraphBaseEndpoint");
             return config;
         }
+
         /// <summary>
-        /// Reads a  configuration from a json file
+        /// Reads a configuration from a json file OR environment variables
         /// </summary>
-        /// <param name="path">Path to the configuration json file</param>
-        /// <returns>SampleConfiguration as read from the json file</returns>
+        /// <param name="wichKey">The configuration key to retrieve</param>
+        /// <param name="useCache">Whether to use cache</param>
+        /// <returns>Configuration value as read from the json file or environment variables</returns>
         public static string? GetConfig(string wichKey = "EncryptKey:DefaultKey", bool useCache = false)
         {
             // .NET configuration
-            // .NET configuration
-
 
             if (useCache)
             {
                 var cachedValue = ConfigContainer.cache.GetValue<string?>(wichKey).GetAwaiter().GetResult();
-
                 if (cachedValue != null)
                 {
                     return cachedValue;
                 }
             }
 
+            string? envValue = GetFromEnvironmentVariables(wichKey);
+            if (!string.IsNullOrEmpty(envValue))
+            {
+                if (useCache)
+                {
+                    ConfigContainer.cache.CreateValue(wichKey, envValue, 60 * 60 * 240000);
+                }
+                return envValue;
+            }
+#if DEBUG
+
+            string? environment = Environment.GetEnvironmentVariable(ENVIRONMENT);
+#endif 
+
+
             IConfigurationRoot configuration;
             if (isAzureFunction)
             {
 #if DEBUG
-                               configuration = new ConfigurationBuilder()
-                              .SetBasePath(Directory.GetCurrentDirectory())
-                              .AddJsonFile("appsettings.json")
-                              .AddEnvironmentVariables()
-                              .Build();
+                var configInternal = new ConfigurationBuilder()
+                   .SetBasePath(Directory.GetCurrentDirectory())
+                   .AddJsonFile("appsettings.json");
+
+                if(!string.IsNullOrEmpty(environment))
+                {
+                    configInternal.AddJsonFile($"{Directory.GetCurrentDirectory()}/settings/appsettings.{environment}.json", optional: true);
+                }
+                configuration = configInternal.Build();
+
+
 #else
-                configuration = new ConfigurationBuilder()
+            configuration = new ConfigurationBuilder()
                           .AddJsonFile("/home/site/wwwroot/appsettings.json")
                           .Build();
 #endif
-
             }
             else
             {
-                configuration = new ConfigurationBuilder()
-               .SetBasePath(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location))
-               .AddJsonFile("appsettings.json")
-               .AddEnvironmentVariables()
-               .Build();
+
+#if DEBUG
+
+
+                var configInternal = new ConfigurationBuilder()
+                   .SetBasePath(Directory.GetCurrentDirectory())
+                   .AddJsonFile("appsettings.json");
+
+                if (!string.IsNullOrEmpty(environment))
+                {
+                    configInternal.AddJsonFile($"{Directory.GetCurrentDirectory()}/settings/appsettings.{environment}.json", optional: false);
+                }
+                configuration = configInternal.Build();
+
+#else
+configuration = new ConfigurationBuilder()
+                       .SetBasePath(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location))
+                       .AddJsonFile("appsettings.json")
+                       .Build();
+#endif
+
             }
 
             try
             {
                 var configValue = configuration.GetValue(wichKey, "");
 
-                if (useCache)
+                if (useCache && !string.IsNullOrEmpty(configValue))
                 {
                     ConfigContainer.cache.CreateValue(wichKey, configValue, 60 * 60 * 240000);
                 }
@@ -108,19 +144,16 @@ namespace Ihelpers.Helpers
             }
             catch (Exception)
             {
-
                 return null;
             }
-
         }
 
-
-
         /// <summary>
-        /// Reads a configuration from a json file and convert to desired type
+        /// Reads a configuration from a json file OR environment variables and convert to desired type
         /// </summary>
-        /// <param name="path">Path to the configuration json file</param>
-        /// <returns>SampleConfiguration as read from the json file</returns>
+        /// <param name="wichKey">The configuration key to retrieve</param>
+        /// <param name="useCache">Whether to use cache</param>
+        /// <returns>Configuration value as read from the json file or environment variables</returns>
         public static T? GetConfig<T>(string wichKey = "EncryptKey:DefaultKey", bool useCache = false)
         {
             // .NET configuration
@@ -128,47 +161,83 @@ namespace Ihelpers.Helpers
             if (useCache)
             {
                 var cachedValue = ConfigContainer.cache.GetValue<T>(wichKey).GetAwaiter().GetResult();
-
                 if (cachedValue != null)
                 {
                     return cachedValue;
                 }
             }
 
-            IConfigurationRoot configuration;
+            string? envValue = GetFromEnvironmentVariables(wichKey);
+            if (!string.IsNullOrEmpty(envValue))
+            {
+                try
+                {
+                    T? convertedValue = (T)Convert.ChangeType(envValue, typeof(T));
+                    if (useCache && convertedValue != null)
+                    {
+                        ConfigContainer.cache.CreateValue(wichKey, convertedValue, 60 * 60 * 240000);
+                    }
+                    return convertedValue;
+                }
+                catch
+                {
+                }
+            }
 
+            IConfigurationRoot configuration;
+#if DEBUG
+
+            string? environment = Environment.GetEnvironmentVariable(ENVIRONMENT);
+#endif 
             if (isAzureFunction)
             {
-                #if DEBUG
-                               configuration = new ConfigurationBuilder()
-                              .SetBasePath(Directory.GetCurrentDirectory())
-                              .AddJsonFile("appsettings.json")
-                              .AddEnvironmentVariables()
-                              .Build();
-#else
-                              configuration = new ConfigurationBuilder()
-                                        .AddJsonFile("/home/site/wwwroot/appsettings.json")
-                                        .Build();
-#endif
+#if DEBUG
 
+
+                var configInternal = new ConfigurationBuilder()
+                       .SetBasePath(Directory.GetCurrentDirectory())
+                       .AddJsonFile("appsettings.json");
+
+                if (!string.IsNullOrEmpty(environment))
+                {
+                    configInternal.AddJsonFile($"{Directory.GetCurrentDirectory()}/settings/appsettings.{environment}.json", optional: true);
+                }
+                configuration = configInternal.Build();
+#else
+            configuration = new ConfigurationBuilder()
+                          .AddJsonFile("/home/site/wwwroot/appsettings.json")
+                          .Build();
+#endif
             }
             else
             {
-                configuration = new ConfigurationBuilder()
-               .SetBasePath(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location))
-               .AddJsonFile("appsettings.json")
-               .AddEnvironmentVariables()
-               .Build();
+#if DEBUG
+
+
+                var configInternal = new ConfigurationBuilder()
+                   .SetBasePath(Directory.GetCurrentDirectory())
+                   .AddJsonFile("appsettings.json");
+
+                if (!string.IsNullOrEmpty(environment))
+                {
+                    configInternal.AddJsonFile($"{Directory.GetCurrentDirectory()}/settings/appsettings.{environment}.json", optional: false);
+                }
+                configuration = configInternal.Build();
+
+#else
+configuration = new ConfigurationBuilder()
+                       .SetBasePath(Path.GetDirectoryName(Assembly.GetEntryAssembly().Location))
+                       .AddJsonFile("appsettings.json")
+                       .Build();
+#endif
+
             }
-
-
-            // .NET configuration
 
             try
             {
                 T? configValue = configuration.GetSection(wichKey).Get<T>();
 
-                if (useCache)
+                if (useCache && configValue != null)
                 {
                     ConfigContainer.cache.CreateValue(wichKey, configValue, 60 * 60 * 240000);
                 }
@@ -177,11 +246,44 @@ namespace Ihelpers.Helpers
             }
             catch (Exception)
             {
-
                 return default(T);
             }
-
         }
 
+        /// <summary>
+        /// Search a configuration in environment variables
+        /// </summary>
+        /// <param name="key">The configuration key</param>
+        /// <returns> The stored value or null if not found </returns>
+        private static string? GetFromEnvironmentVariables(string key)
+        {
+            try
+            {
+                //on linux env vars with ':' can have problems, so we try different formats
+                string envVarName = key.Replace(":", "__");
+
+                string? value = Environment.GetEnvironmentVariable(envVarName);
+
+                //If not found try with '.' instead of ':'
+                if (string.IsNullOrEmpty(value))
+                {
+                    envVarName = key.Replace(':', '.');
+                    value = Environment.GetEnvironmentVariable(envVarName);
+                }
+
+                // if still not found try with the original key
+                if (string.IsNullOrEmpty(value))
+                {
+                    value = Environment.GetEnvironmentVariable(key);
+                }
+
+                return value;
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
     }
 }
+
