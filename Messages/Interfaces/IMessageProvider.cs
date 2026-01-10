@@ -8,7 +8,13 @@ namespace Ihelpers.Messages.Interfaces
 {
     public interface IMessageProvider
     {
-        public Task SendMessageAsync(string data, string topic);
-
+        Task SendMessageAsync(string data, string topic);
+        Task SendMessageAsync(string data, string messageChannel, MessageType messageType = MessageType.Topic);
+        Task StartListeningAsync<TMessage, THandler>(string subscriptionName, string messageChannel, MessageType messageType = MessageType.Topic, CancellationToken cancellationToken = default) where THandler : IMessageHandler<TMessage>;
+    }
+    public enum MessageType
+    {
+        Topic,
+        Queue
     }
 }

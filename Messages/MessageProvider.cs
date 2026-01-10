@@ -9,9 +9,19 @@ namespace Ihelpers.Messages
 {
     public class MessageProvider : IMessageProvider
     {
-        public async Task SendMessageAsync(string data, string topic)
+        public  Task SendMessageAsync(string data, string topic)
         {
-            return;
+            return Task.CompletedTask;
+        }
+
+        public  Task SendMessageAsync(string data, string messageChannel, MessageType messageType = MessageType.Topic)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task StartListeningAsync<TMessage, THandler>(string subscriptionName, string messageChannel, MessageType messageType = MessageType.Topic, CancellationToken cancellationToken = default) where THandler : IMessageHandler<TMessage>
+        {
+            return Task.CompletedTask;
         }
     }
 }
