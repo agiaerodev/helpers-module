@@ -2,6 +2,7 @@
 using Microsoft.Azure.Functions.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Identity.Client;
+using System.ComponentModel;
 using System.ComponentModel.Design;
 using System.IO;
 using System.Reflection;
@@ -71,6 +72,8 @@ namespace Ihelpers.Helpers
             }
 
             string? envValue = GetFromEnvironmentVariables(wichKey);
+            Console.WriteLine($">>>{wichKey} VALUE IS {envValue}");
+
             if (!string.IsNullOrEmpty(envValue))
             {
                 if (useCache)
@@ -81,7 +84,9 @@ namespace Ihelpers.Helpers
             }
 #if DEBUG
 
-            string? environment = Environment.GetEnvironmentVariable(ENVIRONMENT);
+            string? environment = Environment.GetEnvironmentVariable(ENVIRONMENT) ?? "prod";
+            Console.WriteLine($">>>THE ENVIRONMENT VALUE IS {environment}");
+
 #endif 
 
 
@@ -168,11 +173,15 @@ configuration = new ConfigurationBuilder()
             }
 
             string? envValue = GetFromEnvironmentVariables(wichKey);
+            Console.WriteLine($">>>{wichKey} VALUE IS {envValue}");
+
             if (!string.IsNullOrEmpty(envValue))
             {
                 try
                 {
-                    T? convertedValue = (T)Convert.ChangeType(envValue, typeof(T));
+                    var converter = TypeDescriptor.GetConverter(typeof(T));
+                    T? convertedValue = (T?)converter.ConvertFromString(envValue);
+
                     if (useCache && convertedValue != null)
                     {
                         ConfigContainer.cache.CreateValue(wichKey, convertedValue, 60 * 60 * 240000);
@@ -263,6 +272,7 @@ configuration = new ConfigurationBuilder()
                 string envVarName = key.Replace(":", "__");
 
                 string? value = Environment.GetEnvironmentVariable(envVarName);
+                Console.WriteLine($">>>{envVarName} THE ENV VALUE IS {value}");
 
                 //If not found try with '.' instead of ':'
                 if (string.IsNullOrEmpty(value))
